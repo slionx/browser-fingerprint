@@ -1,0 +1,34 @@
+{
+  "name": "browser-fingerprint",
+  "version": "1.0.0",
+  "description": "Browser fingerprint isolation tool using native Chrome with dynamic fingerprints",
+  "main": "dist/index.js",
+  "bin": {
+    "bfp": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli.js",
+    "dev": "ts-node src/cli.ts"
+  },
+  "keywords": [
+    "browser",
+    "fingerprint",
+    "privacy",
+    "chrome",
+    "automation"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "puppeteer-core": "^21.0.0",
+    "uuid": "^9.0.0",
+    "commander": "^11.0.0",
+    "chalk": "^4.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/uuid": "^9.0.0",
+    "typescript": "^5.0.0",
+    "ts-node": "^10.9.0"
+  }
+}
