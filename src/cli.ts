@@ -23,15 +23,35 @@ program
   .command('create <name>')
   .description('Create a new browser profile')
   .option('-p, --platform <platform>', 'Platform: windows, mac, linux, random', 'random')
-  .option('--proxy <proxy>', 'Proxy server URL')
+  .option('--proxy <proxy>', 'Proxy server URL (e.g., socks5://host:port)')
   .action((name, options) => {
-    const profile = manager.create(name, options.platform);
+    // Parse proxy URL if provided
+    let proxyConfig;
+    if (options.proxy) {
+      const match = options.proxy.match(/^(socks5|http):\/\/(?:([^:]+):([^@]+)@)?([^:]+):(\d+)$/);
+      if (match) {
+        proxyConfig = {
+          type: match[1] as 'socks5' | 'http',
+          username: match[2],
+          password: match[3],
+          host: match[4],
+          port: parseInt(match[5]),
+        };
+      } else {
+        console.log(chalk.yellow('Warning: Invalid proxy format. Use: socks5://host:port or http://user:pass@host:port'));
+      }
+    }
+
+    const profile = manager.create(name, options.platform, proxyConfig);
     console.log(chalk.green('✓ Profile created:'));
     console.log(`  ID: ${chalk.cyan(profile.id)}`);
     console.log(`  Name: ${profile.name}`);
     console.log(`  UA: ${profile.userAgent.substring(0, 60)}...`);
     console.log(`  WebGL: ${profile.webgl.renderer.substring(0, 50)}...`);
     console.log(`  Screen: ${profile.hardware.screenWidth}x${profile.hardware.screenHeight}`);
+    if (profile.proxy) {
+      console.log(`  Proxy: ${profile.proxy.type}://${profile.proxy.host}:${profile.proxy.port}`);
+    }
   });
 
 // List profiles
