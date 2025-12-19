@@ -41,6 +41,18 @@ export class ProfileManager {
     this.ensureProfilesDir();
   }
 
+  private getHostPlatform(): 'windows' | 'mac' | 'linux' {
+    if (process.platform === 'darwin') return 'mac';
+    if (process.platform === 'win32') return 'windows';
+    return 'linux';
+  }
+
+  private inferPlatformFromUA(userAgent: string): 'windows' | 'mac' | 'linux' {
+    if (userAgent.includes('Macintosh')) return 'mac';
+    if (userAgent.includes('Windows NT')) return 'windows';
+    return 'linux';
+  }
+
   private ensureProfilesDir(): void {
     if (!fs.existsSync(this.profilesDir)) {
       fs.mkdirSync(this.profilesDir, { recursive: true });
@@ -65,16 +77,21 @@ export class ProfileManager {
     // Create profile directory
     fs.mkdirSync(profilePath, { recursive: true });
 
+    const resolvedPlatform: 'windows' | 'mac' | 'linux' = platform === 'random'
+      ? this.getHostPlatform()
+      : platform;
+    const userAgent = generateUA(resolvedPlatform);
+
     const config: ProfileConfig = {
       id,
       name,
       createdAt: new Date().toISOString(),
       lastUsed: new Date().toISOString(),
-      userAgent: generateUA(platform),
-      platform,
+      userAgent,
+      platform: resolvedPlatform,
       canvas: getDefaultCanvasConfig(),
-      webgl: getDefaultWebGLConfig(),
-      hardware: getDefaultHardwareConfig(),
+      webgl: getDefaultWebGLConfig(resolvedPlatform),
+      hardware: getDefaultHardwareConfig(resolvedPlatform),
       proxy,
     };
 
@@ -188,11 +205,18 @@ export class ProfileManager {
     const config = this.get(profileId);
     if (!config) return null;
 
+    const resolvedPlatform: 'windows' | 'mac' | 'linux' = config.platform === 'random'
+      ? this.inferPlatformFromUA(config.userAgent)
+      : config.platform;
+
+    const userAgent = generateUA(resolvedPlatform);
+
     const updates: Partial<ProfileConfig> = {
-      userAgent: generateUA(config.platform),
+      platform: resolvedPlatform,
+      userAgent,
       canvas: getDefaultCanvasConfig(),
-      webgl: getDefaultWebGLConfig(),
-      hardware: getDefaultHardwareConfig(),
+      webgl: getDefaultWebGLConfig(resolvedPlatform),
+      hardware: getDefaultHardwareConfig(resolvedPlatform),
     };
 
     return this.update(profileId, updates);

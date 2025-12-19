@@ -96,6 +96,8 @@ export class BrowserLauncher {
 
     const userDataDir = this.profileManager.getUserDataDir(profileId);
 
+    const headless = options.headless ?? false;
+
     // Build Chrome arguments
     const args = [
       '--no-first-run',
@@ -105,6 +107,10 @@ export class BrowserLauncher {
       `--user-agent=${profile.userAgent}`,
     ];
 
+    if (headless) {
+      args.push(`--window-size=${profile.hardware.screenWidth},${profile.hardware.screenHeight}`);
+    }
+
     // Add proxy if configured
     const proxyArg = this.getProxyArg(profile, options.proxy);
     if (proxyArg) {
@@ -112,20 +118,36 @@ export class BrowserLauncher {
     }
 
     // Launch browser
+    const viewportHeight = headless
+      ? profile.hardware.screenHeight
+      : profile.hardware.screenHeight - 100;
+
+    const defaultViewport = options.viewport
+      ? { ...options.viewport, deviceScaleFactor: profile.hardware.pixelRatio }
+      : {
+          width: profile.hardware.screenWidth,
+          height: viewportHeight,
+          deviceScaleFactor: profile.hardware.pixelRatio,
+        };
+
     const browser = await puppeteer.launch({
       executablePath: chromePath,
-      headless: options.headless ?? false,
+      headless,
       userDataDir,
       args,
-      defaultViewport: options.viewport || {
-        width: profile.hardware.screenWidth,
-        height: profile.hardware.screenHeight - 100,
-      },
+      defaultViewport,
       ignoreDefaultArgs: ['--enable-automation'],
     });
 
     // Store reference
     this.activeBrowsers.set(profileId, browser);
+
+    const originalNewPage = browser.newPage.bind(browser);
+    (browser as any).newPage = async () => {
+      const page = await originalNewPage();
+      await this.applyFingerprint(page, profile);
+      return page;
+    };
 
     // Apply fingerprint spoofing to all pages
     browser.on('targetcreated', async (target) => {
@@ -155,6 +177,12 @@ export class BrowserLauncher {
     // Inject before page loads
     await page.evaluateOnNewDocument(injectionScript);
 
+    try {
+      await page.evaluate((script) => {
+        eval(script);
+      }, injectionScript);
+    } catch (e) {}
+
     // Override User-Agent via CDP
     const client = await page.target().createCDPSession();
 
@@ -165,37 +193,157 @@ export class BrowserLauncher {
     });
 
     // Mask webdriver
-    await page.evaluateOnNewDocument(() => {
+    const webdriverOverride = () => {
       Object.defineProperty(navigator, 'webdriver', {
         get: () => false,
       });
-    });
+    };
+    await page.evaluateOnNewDocument(webdriverOverride);
+    try {
+      await page.evaluate(webdriverOverride);
+    } catch (e) {}
 
     // Hide automation indicators
-    await page.evaluateOnNewDocument(() => {
+    const hideAutomationIndicators = () => {
       // Remove Puppeteer/Chrome automation flags
       const newProto = (navigator as any).__proto__;
       delete newProto.webdriver;
 
       // Mock plugins
+      const createPluginAndMimeTypeArrays = () => {
+        const data = [
+          {
+            name: 'Chrome PDF Plugin',
+            filename: 'internal-pdf-viewer',
+            description: 'Portable Document Format',
+            mimeTypes: [
+              {
+                type: 'application/x-google-chrome-pdf',
+                suffixes: 'pdf',
+                description: 'Portable Document Format',
+              },
+            ],
+          },
+          {
+            name: 'Chrome PDF Viewer',
+            filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai',
+            description: '',
+            mimeTypes: [
+              {
+                type: 'application/pdf',
+                suffixes: 'pdf',
+                description: '',
+              },
+            ],
+          },
+          {
+            name: 'Native Client',
+            filename: 'internal-nacl-plugin',
+            description: '',
+            mimeTypes: [
+              {
+                type: 'application/x-nacl',
+                suffixes: '',
+                description: 'Native Client Executable',
+              },
+              {
+                type: 'application/x-pnacl',
+                suffixes: '',
+                description: 'Portable Native Client Executable',
+              },
+            ],
+          },
+        ];
+
+        const plugins: any[] = [];
+        const mimeTypes: any[] = [];
+
+        const makeMimeType = (mt: any, enabledPlugin: any) => {
+          const mimeType: any = {};
+          Object.defineProperties(mimeType, {
+            type: { get: () => mt.type },
+            suffixes: { get: () => mt.suffixes },
+            description: { get: () => mt.description },
+            enabledPlugin: { get: () => enabledPlugin },
+          });
+          if (typeof MimeType !== 'undefined') {
+            try {
+              Object.setPrototypeOf(mimeType, (MimeType as any).prototype);
+            } catch (e) {}
+          }
+          return mimeType;
+        };
+
+        const makePlugin = (p: any) => {
+          const plugin: any = {};
+          Object.defineProperties(plugin, {
+            name: { get: () => p.name },
+            filename: { get: () => p.filename },
+            description: { get: () => p.description },
+            length: { get: () => p.mimeTypes.length },
+          });
+
+          const pluginMimeTypes = p.mimeTypes.map((mt: any) => makeMimeType(mt, plugin));
+          for (let i = 0; i < pluginMimeTypes.length; i++) {
+            Object.defineProperty(plugin, i, { get: () => pluginMimeTypes[i] });
+            mimeTypes.push(pluginMimeTypes[i]);
+          }
+
+          plugin.item = (index: number) => plugin[index] || null;
+          plugin.namedItem = (name: string) => {
+            for (let i = 0; i < plugin.length; i++) {
+              const mt = plugin[i];
+              if (mt && mt.type === name) return mt;
+            }
+            return null;
+          };
+
+          if (typeof Plugin !== 'undefined') {
+            try {
+              Object.setPrototypeOf(plugin, (Plugin as any).prototype);
+            } catch (e) {}
+          }
+
+          return plugin;
+        };
+
+        for (const p of data) {
+          plugins.push(makePlugin(p));
+        }
+
+        const pluginArray: any = plugins;
+        pluginArray.item = (index: number) => pluginArray[index] || null;
+        pluginArray.namedItem = (name: string) => pluginArray.find((p: any) => p.name === name) || null;
+        pluginArray.refresh = () => undefined;
+
+        const mimeTypeArray: any = mimeTypes;
+        mimeTypeArray.item = (index: number) => mimeTypeArray[index] || null;
+        mimeTypeArray.namedItem = (name: string) => mimeTypeArray.find((mt: any) => mt.type === name) || null;
+
+        if (typeof PluginArray !== 'undefined') {
+          try {
+            Object.setPrototypeOf(pluginArray, (PluginArray as any).prototype);
+          } catch (e) {}
+        }
+        if (typeof MimeTypeArray !== 'undefined') {
+          try {
+            Object.setPrototypeOf(mimeTypeArray, (MimeTypeArray as any).prototype);
+          } catch (e) {}
+        }
+
+        return { pluginArray, mimeTypeArray };
+      };
+
+      const { pluginArray, mimeTypeArray } = createPluginAndMimeTypeArrays();
+
       Object.defineProperty(navigator, 'plugins', {
-        get: () => {
-          const plugins = [
-            { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
-            { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
-            { name: 'Native Client', filename: 'internal-nacl-plugin' },
-          ];
-          return Object.setPrototypeOf(
-            plugins.map((p) => ({
-              ...p,
-              description: '',
-              length: 1,
-              item: () => null,
-              namedItem: () => null,
-            })),
-            PluginArray.prototype
-          );
-        },
+        get: () => pluginArray,
+        configurable: true,
+      });
+
+      Object.defineProperty(navigator, 'mimeTypes', {
+        get: () => mimeTypeArray,
+        configurable: true,
       });
 
       // Mock permissions
@@ -206,7 +354,11 @@ export class BrowserLauncher {
         }
         return originalQuery(parameters);
       };
-    });
+    };
+    await page.evaluateOnNewDocument(hideAutomationIndicators);
+    try {
+      await page.evaluate(hideAutomationIndicators);
+    } catch (e) {}
   }
 
   /**

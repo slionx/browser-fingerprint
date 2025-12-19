@@ -3,6 +3,8 @@
  * Randomizes WebGL renderer and vendor information
  */
 
+import { PlatformType } from './ua';
+
 export interface WebGLConfig {
   enabled: boolean;
   vendor: string;
@@ -36,8 +38,22 @@ const GPU_CONFIGS = [
   { vendor: 'Google Inc. (Apple)', renderer: 'ANGLE (Apple, Apple M2 Pro, OpenGL 4.1)' },
 ];
 
-export function generateRandomGPU(): { vendor: string; renderer: string } {
-  return GPU_CONFIGS[Math.floor(Math.random() * GPU_CONFIGS.length)];
+function randomChoice<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+export function generateRandomGPU(platform: PlatformType = 'random'): { vendor: string; renderer: string } {
+  if (platform === 'mac') {
+    const candidates = GPU_CONFIGS.filter((g) => g.vendor.includes('(Apple)'));
+    return randomChoice(candidates.length ? candidates : GPU_CONFIGS);
+  }
+
+  if (platform === 'windows' || platform === 'linux') {
+    const candidates = GPU_CONFIGS.filter((g) => !g.vendor.includes('(Apple)'));
+    return randomChoice(candidates.length ? candidates : GPU_CONFIGS);
+  }
+
+  return randomChoice(GPU_CONFIGS);
 }
 
 export function generateWebGLSeed(): string {
@@ -87,7 +103,7 @@ export function getWebGLInjectionScript(config: WebGLConfig): string {
       const originalGetExtension = context.getExtension.bind(context);
       context.getExtension = function(name) {
         const ext = originalGetExtension(name);
-        if (ext && name === 'WEBGL_debug_renderer_info') {
+        if (name === 'WEBGL_debug_renderer_info') {
           return {
             UNMASKED_VENDOR_WEBGL: 37445,
             UNMASKED_RENDERER_WEBGL: 37446,
@@ -105,8 +121,8 @@ export function getWebGLInjectionScript(config: WebGLConfig): string {
 `;
 }
 
-export function getDefaultWebGLConfig(): WebGLConfig {
-  const gpu = generateRandomGPU();
+export function getDefaultWebGLConfig(platform: PlatformType = 'random'): WebGLConfig {
+  const gpu = generateRandomGPU(platform);
   return {
     enabled: true,
     vendor: gpu.vendor,

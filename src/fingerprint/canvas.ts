@@ -40,7 +40,6 @@ export function getCanvasInjectionScript(config: CanvasNoiseConfig): string {
     };
   }
 
-  const random = seededRandom(config.seed + '_canvas');
   const noiseScale = config.noise / 100;
 
   // Store original methods
@@ -50,6 +49,7 @@ export function getCanvasInjectionScript(config: CanvasNoiseConfig): string {
 
   // Add noise to canvas pixel data
   function addNoise(imageData) {
+    const random = seededRandom(config.seed + '_canvas');
     const data = imageData.data;
     for (let i = 0; i < data.length; i += 4) {
       // Add subtle noise to RGB channels (not alpha)
@@ -68,9 +68,17 @@ export function getCanvasInjectionScript(config: CanvasNoiseConfig): string {
     const ctx = this.getContext('2d');
     if (ctx) {
       try {
-        const imageData = ctx.getImageData(0, 0, this.width, this.height);
+        const imageData = originalGetImageData.call(ctx, 0, 0, this.width, this.height);
+        const originalData = new Uint8ClampedArray(imageData.data);
         const noisyData = addNoise(imageData);
         ctx.putImageData(noisyData, 0, 0);
+
+        const result = originalToDataURL.apply(this, args);
+
+        imageData.data.set(originalData);
+        ctx.putImageData(imageData, 0, 0);
+
+        return result;
       } catch (e) {
         // Canvas might be tainted, proceed without noise
       }
@@ -85,9 +93,20 @@ export function getCanvasInjectionScript(config: CanvasNoiseConfig): string {
     const ctx = this.getContext('2d');
     if (ctx) {
       try {
-        const imageData = ctx.getImageData(0, 0, this.width, this.height);
+        const imageData = originalGetImageData.call(ctx, 0, 0, this.width, this.height);
+        const originalData = new Uint8ClampedArray(imageData.data);
         const noisyData = addNoise(imageData);
         ctx.putImageData(noisyData, 0, 0);
+
+        const wrappedCallback = function(blob) {
+          try {
+            imageData.data.set(originalData);
+            ctx.putImageData(imageData, 0, 0);
+          } catch (e) {}
+          callback(blob);
+        };
+
+        return originalToBlob.call(this, wrappedCallback, ...args);
       } catch (e) {
         // Canvas might be tainted
       }

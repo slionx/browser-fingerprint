@@ -3,6 +3,8 @@
  * Spoofs navigator properties related to hardware
  */
 
+import { PlatformType } from './ua';
+
 export interface HardwareConfig {
   enabled: boolean;
   hardwareConcurrency: number;  // CPU cores
@@ -71,14 +73,24 @@ export function generateHardwareSeed(): string {
   ).join('');
 }
 
-export function generateRandomHardware(): Omit<HardwareConfig, 'enabled' | 'seed'> {
+export function generateRandomHardware(platform: PlatformType = 'random'): Omit<HardwareConfig, 'enabled' | 'seed'> {
   const screen = randomChoice(SCREEN_RESOLUTIONS);
   const lang = randomChoice(LANGUAGES);
+
+  const resolvedPlatform = platform === 'random'
+    ? randomChoice<Exclude<PlatformType, 'random'>>(['windows', 'mac', 'linux'])
+    : platform;
+
+  const navigatorPlatform = resolvedPlatform === 'mac'
+    ? 'MacIntel'
+    : resolvedPlatform === 'windows'
+      ? 'Win32'
+      : 'Linux x86_64';
 
   return {
     hardwareConcurrency: randomChoice(CPU_CORES),
     deviceMemory: randomChoice(MEMORY_SIZES),
-    platform: 'Win32', // Most common
+    platform: navigatorPlatform,
     language: lang.primary,
     languages: lang.list,
     timezone: randomChoice(TIMEZONES),
@@ -111,6 +123,8 @@ export function getHardwareInjectionScript(config: HardwareConfig): string {
     languages: { value: Object.freeze(config.languages) },
   };
 
+  const navigatorProto = Object.getPrototypeOf(navigator);
+
   for (const [prop, descriptor] of Object.entries(navigatorProps)) {
     try {
       Object.defineProperty(navigator, prop, {
@@ -119,6 +133,14 @@ export function getHardwareInjectionScript(config: HardwareConfig): string {
       });
     } catch (e) {
       // Property might not be configurable
+    }
+
+    try {
+      Object.defineProperty(navigatorProto, prop, {
+        get: () => descriptor.value,
+        configurable: true,
+      });
+    } catch (e) {
     }
   }
 
@@ -132,9 +154,18 @@ export function getHardwareInjectionScript(config: HardwareConfig): string {
     pixelDepth: config.colorDepth,
   };
 
+  const screenProto = Object.getPrototypeOf(screen);
+
   for (const [prop, value] of Object.entries(screenProps)) {
     try {
       Object.defineProperty(screen, prop, {
+        get: () => value,
+        configurable: true,
+      });
+    } catch (e) {}
+
+    try {
+      Object.defineProperty(screenProto, prop, {
         get: () => value,
         configurable: true,
       });
@@ -186,8 +217,8 @@ export function getHardwareInjectionScript(config: HardwareConfig): string {
 `;
 }
 
-export function getDefaultHardwareConfig(): HardwareConfig {
-  const hardware = generateRandomHardware();
+export function getDefaultHardwareConfig(platform: PlatformType = 'random'): HardwareConfig {
+  const hardware = generateRandomHardware(platform);
   return {
     enabled: true,
     ...hardware,

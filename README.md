@@ -36,7 +36,7 @@ npm run start -- check
 
 # 创建新 Profile
 npm run start -- create account1
-npm run start -- create account2 --platform windows
+npm run start -- create account2 --platform mac
 npm run start -- create account3 --proxy socks5://127.0.0.1:1080
 
 # 列出所有 Profile
@@ -64,6 +64,20 @@ npm run start -- warp status
 npm run start -- warp connect
 npm run start -- warp rotate
 npm run start -- warp disconnect
+
+
+推荐操作流程（串行用账号、尽量让 IP 变）
+步骤 1：确保 account1 的浏览器完全退出（不要让它还在后台跑连接）
+步骤 2：旋转/重连 WARP
+npm run start -- warp rotate
+# 或者更“硬”的方式：
+# npm run start -- warp disconnect
+# npm run start -- warp connect
+步骤 3：确认 WARP 连接状态
+npm run start -- warp status
+步骤 4：再启动 account2
+npm run start -- launch account2
+步骤 5：在浏览器里打开一个查 IP 网站确认是否变了
 ```
 
 ## 编程接口
@@ -256,6 +270,41 @@ const randomProxy = proxyManager.getRandom();
 - https://fingerprintjs.github.io/fingerprintjs/
 - https://pixelscan.net
 - https://bot.sannysoft.com
+
+### 综合指纹/隐私信息检测（类似 BrowserLeaks）
+
+- https://browserleaks.com/（canvas/webgl/webrtc/javascript/fonts/headers 等分项页面）
+- https://pixelscan.net/fingerprint-check（指纹一致性/风险评分）
+- https://www.browserscan.net（综合指纹检测）
+- https://amiunique.org/fingerprint（指纹唯一性/研究向）
+- https://coveryourtracks.eff.org/（追踪/指纹综合测试）
+- https://www.deviceinfo.me/（设备/浏览器暴露信息大全）
+
+### 自动化/无头/反爬检测（看你像不像 bot）
+
+- https://bot.sannysoft.com/
+- https://bot.incolumitas.com/
+- https://arh.antoinevastel.com/bots/areyouheadless
+- https://intoli.com/blog/making-chrome-headless-undetectable/chrome-headless-test.html
+- https://fingerprintjs.github.io/BotD/main/
+- https://pixelscan.net/bot-check
+
+### IP / DNS / WebRTC 泄露检测（代理/隧道常踩坑）
+
+- https://ipleak.net/
+- https://www.dnsleaktest.com/webrtc.html（含 WebRTC 页面）
+- https://browserleaks.com/webrtc
+- https://whoer.net/
+
+### TLS / HTTP2 指纹（更偏网络层）
+
+- https://www.howsmyssl.com/
+- https://www.browserscan.net/tls
+- https://tls.peet.ws/（JA3/HTTP2 相关）
+
+### 额外：CreepJS（强指纹探测）
+
+- https://abrahamjuliot.github.io/creepjs/（官方 GitHub Pages；非官方镜像可能是 honeypot）
 
 ## 注意事项
 
